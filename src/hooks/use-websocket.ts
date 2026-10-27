@@ -49,7 +49,10 @@ export function useWebSocket(options: UseWebSocketOptions = {}) {
         return
       }
 
-      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3000', {
+      // Default to the origin the page is served from: a same-origin deployment needs no
+      // configuration, and a self-hoster cannot accidentally ship a bundle that points at
+      // localhost. Set NEXT_PUBLIC_SOCKET_URL only when the socket lives on another host.
+      const socket = io(process.env.NEXT_PUBLIC_SOCKET_URL || window.location.origin, {
         // No `auth` payload: the NextAuth session JWT lives in an httpOnly cookie the
         // browser attaches to this same-origin handshake, and the server verifies that
         // cookie directly. Sending a placeholder token here only guaranteed rejection.
