@@ -13,7 +13,36 @@
 
 </div>
 
-![Vault dashboard](docs/screenshot.png)
+![Vault dashboard](docs/screens/01-dashboard.png)
+
+---
+
+## Screenshots
+
+| | |
+|---|---|
+| **Dashboard** — notes list beside the editor, with the navigation rail, categories and quick stats | **Calendar** — month view with events stored as JSON sidecars in Drive |
+| ![Dashboard](docs/screens/01-dashboard.png) | ![Calendar](docs/screens/02-calendar.png) |
+| **Jobs** — application pipeline with stage counters and progress | **Projects** — project cards with status, priority, dates and progress |
+| ![Jobs](docs/screens/03-jobs.png) | ![Projects](docs/screens/04-projects.png) |
+| **Search** — one query across notes, projects, jobs and events | **Files** — uploads and provider filtering |
+| ![Search](docs/screens/05-search.png) | ![Files](docs/screens/06-files.png) |
+| **Cloud storage** — a single Google Drive connection, status and setup | **Content types** — system types and your own custom ones |
+| ![Cloud storage](docs/screens/07-settings-cloud-storage.png) | ![Content types](docs/screens/08-settings-content-types.png) |
+
+<details>
+<summary>More screenshots — data, integrations, sign-in and error states</summary>
+
+| | |
+|---|---|
+| **Data** — export and backup controls | **Integrations** — the connected Drive account |
+| ![Data](docs/screens/09-settings-data.png) | ![Integrations](docs/screens/10-settings-integrations.png) |
+| **Calendar integrations** — import and export | **Sign in** — Google only, no password field |
+| ![Calendar integrations](docs/screens/11-calendar-integrations.png) | ![Sign in](docs/screens/12-sign-in.png) |
+| **Error page** — a signed-out or failed sign-in, explained | |
+| ![Error page](docs/screens/13-error-page.png) | |
+
+</details>
 
 ---
 
