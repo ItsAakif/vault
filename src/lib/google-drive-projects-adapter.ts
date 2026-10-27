@@ -18,6 +18,20 @@ export interface Project {
   milestones?: any[]
 }
 
+const FOLDER_MIME = 'application/vnd.google-apps.folder'
+const PROJECT_FILE_NAME = 'project.json'
+
+/** A `project.json` record and the project folder that holds it (`null` for the flat layout). */
+interface ProjectRecordFile {
+  fileId: string
+  folderId: string | null
+}
+
+/** Escape a value for a Drive `q` string literal. */
+function escapeQueryValue(value: string): string {
+  return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
+}
+
 export class GoogleDriveProjectsAdapter {
   private drive: any
   private projectsFolderId: string = ''
@@ -55,52 +69,148 @@ export class GoogleDriveProjectsAdapter {
     }
   }
 
+  /**
+   * `createProject` writes one FOLDER per project and puts `project.json` INSIDE it, while Drive's
+   * `files.list` is not recursive: "project.json in Projects" only ever matched a record sitting
+   * directly in `Vault/Projects`. The listing therefore walks the one level that exists, in waves
+   * (as the content adapter does):
+   *
+   *   1. Projects' child folders AND its direct `project.json` files, in parallel - the legacy flat
+   *      layout keeps listing.
+   *   2. One `project.json` listing per child folder, in parallel.
+   *
+   * A folder whose listing fails is skipped, and an unreadable record is skipped below: one broken
+   * project must never fail the whole collection.
+   */
   async listProjects(): Promise<Project[]> {
     try {
-      const files = await this.drive.files.list({
-        q: `'${this.projectsFolderId}' in parents and name='project.json' and trashed=false`,
-        spaces: 'drive',
-        fields: 'files(id, name)',
-        pageSize: 100,
-      })
+      const records = await this.listProjectRecords()
 
-      const projects: Project[] = []
-      if (files.data.files) {
-        for (const file of files.data.files) {
-          const content = await this.drive.files.get({
-            fileId: file.id,
-            alt: 'media',
-          })
-          const project = JSON.parse(content.data)
-          projects.push(project)
-        }
-      }
-
-      return projects.sort(
-        (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
+      const projects = await Promise.all(
+        records.map(async (record) => {
+          try {
+            const content = await this.drive.files.get({
+              fileId: record.fileId,
+              alt: 'media',
+            })
+            return JSON.parse(content.data) as Project
+          } catch (error) {
+            console.error(`Skipping unreadable project ${record.fileId}:`, error)
+            return null
+          }
+        })
       )
+
+      return projects
+        .filter((project): project is Project => project !== null)
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     } catch (error) {
       console.error('Error listing projects:', error)
       throw error
     }
   }
 
+  /** Wave 1: the child folders of Projects and its direct `project.json` files, in parallel. */
+  private async listProjectRecords(): Promise<ProjectRecordFile[]> {
+    const [childFolders, flatFileIds] = await Promise.all([
+      this.listChildFolders(),
+      this.listProjectFileIdsIn(this.projectsFolderId),
+    ])
+
+    // Wave 2: the record inside each project folder, all folders queried in parallel.
+    const nested = await Promise.all(
+      childFolders.map(async (folder) => {
+        try {
+          const fileIds = await this.listProjectFileIdsIn(folder.id)
+          return fileIds.map((fileId) => ({ fileId, folderId: folder.id }))
+        } catch (error) {
+          console.error(`Skipping unlistable project folder ${folder.id}:`, error)
+          return [] as ProjectRecordFile[]
+        }
+      })
+    )
+
+    return [
+      ...flatFileIds.map((fileId) => ({ fileId, folderId: null })),
+      ...nested.flat(),
+    ]
+  }
+
+  private async listChildFolders(): Promise<Array<{ id: string; name: string }>> {
+    const response = await this.drive.files.list({
+      q: `'${this.projectsFolderId}' in parents and mimeType='${FOLDER_MIME}' and trashed=false`,
+      spaces: 'drive',
+      fields: 'files(id, name)',
+      pageSize: 100,
+    })
+
+    return ((response.data.files ?? []) as Array<{ id: string; name: string }>).map((folder) => ({
+      id: folder.id,
+      name: folder.name,
+    }))
+  }
+
+  private async listProjectFileIdsIn(folderId: string): Promise<string[]> {
+    const response = await this.drive.files.list({
+      q: `'${folderId}' in parents and name='${PROJECT_FILE_NAME}' and trashed=false`,
+      spaces: 'drive',
+      fields: 'files(id)',
+      pageSize: 100,
+    })
+
+    return ((response.data.files ?? []) as Array<{ id: string }>).map((file) => file.id)
+  }
+
+  /**
+   * Locate the `project.json` that holds `projectId`.
+   *
+   * `createProject` stamps `projectId` on the project's FOLDER and on the record inside it, so the
+   * property query has to run at both levels: on Projects' children (today's folder layout) and on
+   * Projects itself (the legacy flat record). Wave 2 then asks the matched folder for its record.
+   */
+  private async findProjectRecordFile(projectId: string): Promise<ProjectRecordFile | null> {
+    const propertyFilter = `properties has { key='projectId' and value='${escapeQueryValue(projectId)}' }`
+
+    const owners = await this.drive.files.list({
+      q: `'${this.projectsFolderId}' in parents and ${propertyFilter} and trashed=false`,
+      spaces: 'drive',
+      fields: 'files(id, name, mimeType)',
+      pageSize: 10,
+    })
+
+    const candidates = (owners.data.files ?? []) as Array<{
+      id: string
+      name?: string
+      mimeType?: string
+    }>
+
+    // The folder is today's layout; a folder without a record is not a project.
+    for (const candidate of candidates) {
+      if (candidate.mimeType !== FOLDER_MIME) continue
+      const fileIds = await this.listProjectFileIdsIn(candidate.id)
+      if (fileIds.length > 0) {
+        return { fileId: fileIds[0], folderId: candidate.id }
+      }
+    }
+
+    // The legacy layout: `project.json` directly inside Projects.
+    const flat = candidates.find(
+      (candidate) => candidate.mimeType !== FOLDER_MIME && candidate.name === PROJECT_FILE_NAME
+    )
+    if (flat) return { fileId: flat.id, folderId: null }
+
+    return null
+  }
+
   async getProject(projectId: string): Promise<Project | null> {
     try {
-      const files = await this.drive.files.list({
-        q: `'${this.projectsFolderId}' in parents and properties has { key='projectId' and value='${projectId}' } and trashed=false`,
-        spaces: 'drive',
-        fields: 'files(id)',
-        pageSize: 1,
-      })
-
-      if (!files.data.files || files.data.files.length === 0) {
+      const record = await this.findProjectRecordFile(projectId)
+      if (!record) {
         return null
       }
 
-      const fileId = files.data.files[0].id
       const content = await this.drive.files.get({
-        fileId,
+        fileId: record.fileId,
         alt: 'media',
       })
 
@@ -131,7 +241,7 @@ export class GoogleDriveProjectsAdapter {
       const folder = await this.drive.files.create({
         resource: {
           name: folderName,
-          mimeType: 'application/vnd.google-apps.folder',
+          mimeType: FOLDER_MIME,
           parents: [this.projectsFolderId],
           properties: { projectId: id },
         },
@@ -141,7 +251,7 @@ export class GoogleDriveProjectsAdapter {
       // Write project.json
       await this.drive.files.create({
         resource: {
-          name: 'project.json',
+          name: PROJECT_FILE_NAME,
           parents: [folder.data.id],
           properties: { projectId: id },
         },
@@ -174,36 +284,21 @@ export class GoogleDriveProjectsAdapter {
         updatedAt: new Date().toISOString(),
       }
 
-      const files = await this.drive.files.list({
-        q: `'${this.projectsFolderId}' in parents and properties has { key='projectId' and value='${projectId}' } and trashed=false`,
-        spaces: 'drive',
-        fields: 'files(id)',
-        pageSize: 1,
-      })
-
-      if (!files.data.files || files.data.files.length === 0) {
-        throw new Error('Project folder not found')
+      // Same resolution as `getProject`: the record lives in the project's folder (or, for a
+      // legacy project, directly in Projects). Using the matched owner id as the file id would
+      // look for `project.json` inside a FILE.
+      const record = await this.findProjectRecordFile(projectId)
+      if (!record) {
+        throw new Error('Project record not found')
       }
 
-      const projectFolderId = files.data.files[0].id
-
-      // Find and update project.json
-      const projectFiles = await this.drive.files.list({
-        q: `'${projectFolderId}' in parents and name='project.json' and trashed=false`,
-        spaces: 'drive',
-        fields: 'files(id)',
-        pageSize: 1,
+      await this.drive.files.update({
+        fileId: record.fileId,
+        media: {
+          mimeType: 'application/json',
+          body: JSON.stringify(updated),
+        },
       })
-
-      if (projectFiles.data.files && projectFiles.data.files.length > 0) {
-        await this.drive.files.update({
-          fileId: projectFiles.data.files[0].id,
-          media: {
-            mimeType: 'application/json',
-            body: JSON.stringify(updated),
-          },
-        })
-      }
 
       return updated
     } catch (error) {
@@ -214,21 +309,16 @@ export class GoogleDriveProjectsAdapter {
 
   async deleteProject(projectId: string): Promise<void> {
     try {
-      const files = await this.drive.files.list({
-        q: `'${this.projectsFolderId}' in parents and properties has { key='projectId' and value='${projectId}' } and trashed=false`,
-        spaces: 'drive',
-        fields: 'files(id)',
-        pageSize: 1,
-      })
-
-      if (files.data.files && files.data.files.length > 0) {
-        const projectFolderId = files.data.files[0].id
-        // Trash the folder (soft delete)
-        await this.drive.files.update({
-          fileId: projectFolderId,
-          resource: { trashed: true },
-        })
+      const record = await this.findProjectRecordFile(projectId)
+      if (!record) {
+        return
       }
+
+      // Trash the project's folder (soft delete) - or the flat record for a legacy project.
+      await this.drive.files.update({
+        fileId: record.folderId ?? record.fileId,
+        resource: { trashed: true },
+      })
     } catch (error) {
       console.error('Error deleting project:', error)
       throw error

@@ -54,13 +54,35 @@ interface JobListItem {
   notes: string
 }
 
-const JOB_DATA_STATUS_TO_STAGE: Record<string, JobStageId> = {
-  applied: 'APPLIED',
-  interview: 'INTERVIEWING',
-  offered: 'OFFER_RECEIVED',
-  accepted: 'OFFER_ACCEPTED',
-  declined: 'OFFER_DECLINED',
-  rejected: 'REJECTED'
+/**
+ * The jobs API's `status` is already a `JobStageId` (`APPLIED`, `OFFER_RECEIVED`, ...): the create
+ * form posts a stage id and the Drive adapter persists it verbatim. Older records instead carry a
+ * lowercase word (`applied`, `offered`, ...). Both are resolved here, case-insensitively, because a
+ * lookup that only knew the lowercase words mapped every current record to `INTERESTED`.
+ */
+const LEGACY_JOB_STATUS_TO_STAGE: Record<string, JobStageId> = {
+  APPLIED: 'APPLIED',
+  INTERVIEW: 'INTERVIEWING',
+  OFFERED: 'OFFER_RECEIVED',
+  ACCEPTED: 'OFFER_ACCEPTED',
+  DECLINED: 'OFFER_DECLINED',
+  REJECTED: 'REJECTED'
+}
+
+function isJobStageId(value: string): value is JobStageId {
+  return JOB_STAGES.some((stage) => stage.id === value)
+}
+
+/**
+ * Resolve a persisted `status` value to a pipeline stage. A stage id wins (that is what the API
+ * returns today); the legacy lowercase vocabulary is the fallback; anything else - a missing value,
+ * a word from neither vocabulary - degrades to `INTERESTED` rather than dropping the record.
+ */
+export function resolveJobStage(status: unknown): JobStageId {
+  if (typeof status !== 'string') return 'INTERESTED'
+  const normalized = status.trim().toUpperCase()
+  if (isJobStageId(normalized)) return normalized
+  return LEGACY_JOB_STATUS_TO_STAGE[normalized] ?? 'INTERESTED'
 }
 
 function mapJobData(raw: JobData): JobListItem {
@@ -73,7 +95,7 @@ function mapJobData(raw: JobData): JobListItem {
     salary: raw.salary ?? '',
     applicationUrl: raw.url ?? '',
     deadline: raw.dateDeadline ? new Date(raw.dateDeadline) : null,
-    stage: JOB_DATA_STATUS_TO_STAGE[raw.status] ?? 'INTERESTED',
+    stage: resolveJobStage(raw.status),
     priority: 'MEDIUM',
     notes: raw.notes ?? ''
   }
@@ -541,7 +563,7 @@ export function JobsDashboard({ className }: JobsDashboardProps) {
                 <div className="flex items-center space-x-2">
                   <Badge className={getStageColor(job.stage)}>
                     {getStageIcon(job.stage)}
-                    <span className="ml-1">{job.stage.replace('_', ' ')}</span>
+                    <span className="ml-1">{getJobStage(job.stage).label}</span>
                   </Badge>
                 </div>
               </div>
