@@ -1,0 +1,1110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  password      String?
+  name          String?
+  avatar        String?
+  emailVerified Boolean  @default(false)
+  emailVerifiedAt DateTime?
+  timezone      String   @default("UTC")
+  lastActive    DateTime @default(now())
+  lastLoginAt   DateTime?
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  
+  // Relations
+  contentItems     ContentItem[]
+  categories       Category[]
+  tags             Tag[]
+  files            File[]
+  projects         Project[]
+  jobs             JobOpportunity[]
+  calendarEvents   CalendarEvent[]
+  preferences      UserPreferences?
+  analytics        UserAnalytics?
+  notifications    Notification[]
+  refreshTokens    RefreshToken[]
+  offlineChanges   OfflineChange[]
+  syncLogs         SyncLog[]
+  mobileTokens     MobileToken[]
+  
+  // Workspace relations
+  ownedWorkspaces  Workspace[] @relation("WorkspaceOwner")
+  workspaceMembers WorkspaceMember[]
+  
+  // Collaboration relations
+  collaborations   ProjectCollaborator[]
+  comments         Comment[]
+  shares           Share[]
+  
+  // Activity tracking
+  activities       Activity[]
+  presenceSessions PresenceSession[]
+  
+  // Additional relations
+  timeEntries      TimeEntry[]
+  integrations     Integration[]
+  backups          Backup[]
+  assignedTasks    Task[]          @relation("TaskAssignee")
+  templates        ProjectTemplate[] @relation("TemplateAuthor")
+  cloudIntegrations CloudIntegration[]
+  
+  // OAuth account links (ADR-007 D2)
+  accounts         Account[]
+  
+  // Document lock relations
+  ownedLocks       DocumentLock[]  @relation("DocumentLockOwner")
+  unlockedDocs     DocumentLock[]  @relation("DocumentLockUnlocker")
+  
+  // Custom content types
+  customContentTypes CustomContentType[]
+  
+  // Password reset tokens
+  passwordResetTokens PasswordResetToken[]
+  
+  // Email verification tokens
+  emailVerificationTokens EmailVerificationToken[]
+  
+  @@map("users")
+}
+
+model PasswordResetToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("password_reset_tokens")
+}
+
+model EmailVerificationToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  email     String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+  
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("email_verification_tokens")
+}
+
+model UserPreferences {
+  id        String @id @default(cuid())
+  userId    String @unique
+  theme     String @default("system")
+  language  String @default("en")
+  timezone  String @default("UTC")
+  
+  // Notification preferences
+  emailNotifications    Boolean @default(true)
+  pushNotifications     Boolean @default(true)
+  inAppNotifications    Boolean @default(true)
+  digestNotifications   Boolean @default(false)
+  mentionNotifications  Boolean @default(true)
+  
+  // Advanced notification settings
+  notificationCategories String @default("{}")  // JSON of category preferences
+  quietHours            String @default("{}")   // JSON of quiet hours settings
+  notificationGrouping  Boolean @default(true)
+  notificationBatching  Boolean @default(true)
+  maxNotificationsPerHour Int @default(10)
+  
+  // Privacy preferences
+  profileVisibility     String  @default("private") // public, private, team
+  activityTracking      Boolean @default(true)
+  dataCollection        Boolean @default(true)
+  
+  // UI preferences
+  sidebarCollapsed      Boolean @default(false)
+  defaultView           String  @default("dashboard")
+  itemsPerPage          Int     @default(20)
+  
+  // Advanced preferences
+  autoSave              Boolean @default(true)
+  autoSaveInterval      Int     @default(30) // seconds
+  keyboardShortcuts     Boolean @default(true)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  
+  user      User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  @@map("user_preferences")
+}
+
+model Category {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  color       String   @default("#3B82F6")
+  icon        String?
+  parentId    String?
+  level       Int      @default(1)
+  isSystem    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  workspace   Workspace? @relation(fields: [workspaceId], references: [id])
+  workspaceId String?
+  parent      Category? @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children    Category[] @relation("CategoryHierarchy")
+  contentItems ContentItem[]
+  
+  @@map("categories")
+}
+
+model Tag {
+  id          String   @id @default(cuid())
+  name        String
+  color       String   @default("#10B981")
+  description String?
+  parentId    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  parent      Tag?     @relation("TagHierarchy", fields: [parentId], references: [id])
+  children    Tag[]    @relation("TagHierarchy")
+  contentItems ContentItem[]
+  
+  @@map("tags")
+}
+
+model ContentItem {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   // Rich text/markdown
+  type        ContentType
+  customTypeId String?  // For CUSTOM type items, references CustomContentType.id
+  status      ContentStatus @default(DRAFT)
+  priority    Priority     @default(MEDIUM)
+  archived    Boolean      @default(false)
+  pinned      Boolean      @default(false)
+  customFields String?     // JSON for custom field data
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  category    Category?    @relation(fields: [categoryId], references: [id])
+  categoryId  String?
+  tags        Tag[]
+  files       File[]
+  versions    ContentVersion[]
+  customContentType CustomContentType? @relation("CustomTypeItems", fields: [customTypeId], references: [id])
+  
+  @@map("content_items")
+}
+
+model ContentVersion {
+  id          String   @id @default(cuid())
+  content     String
+  version     Int
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  contentItem ContentItem @relation(fields: [contentItemId], references: [id], onDelete: Cascade)
+  contentItemId String
+  
+  @@unique([contentItemId, version])
+  @@map("content_versions")
+}
+
+model File {
+  id          String   @id @default(cuid())
+  name        String
+  originalName String
+  size        Int
+  type        String
+  path        String
+  thumbnail   String?
+  metadata    Json?
+  provider    String   @default("local") // 'local', 'google', 'microsoft'
+  providerId  String?  // ID in the cloud provider
+  tags        String   @default("[]") // JSON array of tags
+  isPublic    Boolean  @default(false)
+  downloadCount Int    @default(0)
+  checksum    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  contentItem ContentItem? @relation(fields: [contentItemId], references: [id])
+  contentItemId String?
+  
+  @@map("files")
+}
+
+model Project {
+  id              String        @id @default(cuid())
+  title           String
+  description     String?
+  content         String?       // Rich text/markdown
+  startDate       DateTime?
+  endDate         DateTime?
+  progress        Int           @default(0)
+  status          ProjectStatus @default(PLANNING)
+  priority        Priority      @default(MEDIUM)
+  archived        Boolean       @default(false)
+  pinned          Boolean       @default(false)
+  color           String?       // hex color for visual identification
+  estimatedHours  Int?
+  actualHours     Int?
+  budget          Float?
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  
+  // Relations
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId          String
+  workspace       Workspace?    @relation(fields: [workspaceId], references: [id])
+  workspaceId     String?
+  tasks           Task[]
+  milestones      Milestone[]
+  resources       ResourceLink[]
+  collaborators   ProjectCollaborator[]
+  analytics       ProjectAnalytics?
+  timeEntries     TimeEntry[]
+  goals           ProjectGoal[]
+  
+  @@map("projects")
+}
+
+model Task {
+  id              String     @id @default(cuid())
+  title           String
+  description     String?
+  status          TaskStatus @default(TODO)
+  priority        Priority   @default(MEDIUM)
+  dueDate         DateTime?
+  startDate       DateTime?
+  estimatedHours  Int?
+  actualHours     Int?
+  position        Int        @default(0) // for ordering in kanban
+  tags            String?    // JSON string of tags
+  completedAt     DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+  
+  // Relations
+  project         Project    @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId       String
+  parent          Task?      @relation("TaskHierarchy", fields: [parentId], references: [id])
+  parentId        String?
+  children        Task[]     @relation("TaskHierarchy")
+  assignee        User?      @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId      String?
+  timeEntries     TimeEntry[]
+  
+  // Task dependencies
+  dependsOn       TaskDependency[] @relation("DependentTask")
+  dependents      TaskDependency[] @relation("DependsOnTask")
+  
+  @@map("tasks")
+}
+
+model Milestone {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  dueDate     DateTime
+  status      MilestoneStatus @default(PLANNING)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  
+  @@map("milestones")
+}
+
+model ResourceLink {
+  id          String   @id @default(cuid())
+  title       String
+  url         String?
+  type        ResourceType
+  description String?
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  
+  @@map("resource_links")
+}
+
+model JobOpportunity {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   // Rich text/markdown
+  company     String
+  location    String?
+  salary      String?
+  jobUrl      String?
+  applicationDeadline DateTime?
+  applicationStatus ApplicationStage @default(DISCOVERED)
+  matchPercentage Int      @default(0)
+  requiredSkills  String?
+  notes       String?
+  status      ContentStatus @default(DRAFT)
+  priority    Priority     @default(MEDIUM)
+  archived    Boolean      @default(false)
+  pinned      Boolean      @default(false)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("job_opportunities")
+}
+
+model Skill {
+  id          String   @id @default(cuid())
+  name        String
+  category    String?
+  proficiency Int      @default(1) // 1-5 scale
+  description String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@map("skills")
+}
+
+model CalendarEvent {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  startTime   DateTime
+  endTime     DateTime
+  allDay      Boolean  @default(false)
+  recurring   String?
+  reminders   String?
+  location    String?
+  color       String?
+  timezone    String   @default("UTC")
+  
+  // External integration fields
+  externalId      String?  // ID from external calendar (Google, Outlook)
+  externalSource  String?  // 'google', 'outlook', 'exchange'
+  syncStatus      String   @default("synced") // 'synced', 'pending', 'error'
+  lastSyncAt      DateTime?
+  
+  // iCal fields
+  uid             String?  // iCal UID for import/export
+  sequence        Int      @default(0) // iCal sequence number
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@unique([externalId, externalSource, userId])
+  @@map("calendar_events")
+}
+
+// Enums
+enum ContentType {
+  IDEA
+  POETRY
+  NOTE
+  RESOURCE
+  PROJECT
+  JOB
+  DAILY
+  ARCHIVE
+  CUSTOM
+}
+
+enum ContentStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ProjectStatus {
+  PLANNING
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  ON_HOLD
+}
+
+enum TaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  COMPLETED
+  CANCELLED
+}
+
+enum MilestoneStatus {
+  PLANNING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum ResourceType {
+  LINK
+  DOCUMENT
+  IMAGE
+  VIDEO
+  AUDIO
+  OTHER
+}
+
+enum ApplicationStage {
+  DISCOVERED
+  RESEARCHING
+  PREPARING
+  READY
+  APPLIED
+  INTERVIEW
+  DECISION
+  ACCEPTED
+  REJECTED
+}
+
+// New models for enhanced functionality
+
+model Workspace {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  slug        String   @unique
+  settings    String   @default("{}")
+  isPersonal  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  owner       User     @relation("WorkspaceOwner", fields: [ownerId], references: [id])
+  ownerId     String
+  members     WorkspaceMember[]
+  projects    Project[]
+  categories  Category[]
+  
+  @@map("workspaces")
+}
+
+model WorkspaceMember {
+  id          String        @id @default(cuid())
+  role        WorkspaceRole @default(MEMBER)
+  joinedAt    DateTime      @default(now())
+  
+  // Relations
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  workspaceId String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@unique([workspaceId, userId])
+  @@map("workspace_members")
+}
+
+model UserAnalytics {
+  id                String   @id @default(cuid())
+  totalTimeSpent    Int      @default(0) // in minutes
+  tasksCompleted    Int      @default(0)
+  projectsCompleted Int      @default(0)
+  notesCreated      Int      @default(0)
+  eventsCreated     Int      @default(0)
+  streakDays        Int      @default(0)
+  lastActiveDate    DateTime @default(now())
+  weeklyGoal        Int      @default(0) // in minutes
+  monthlyGoal       Int      @default(0) // in minutes
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String   @unique
+  
+  @@map("user_analytics")
+}
+
+model Notification {
+  id          String           @id @default(cuid())
+  type        NotificationType
+  title       String
+  message     String
+  data        String?          // JSON data
+  read        Boolean          @default(false)
+  readAt      DateTime?
+  priority    Priority         @default(MEDIUM)
+  category    String?          // system, project, calendar, etc.
+  actionUrl   String?
+  createdAt   DateTime         @default(now())
+  expiresAt   DateTime?
+  
+  // Grouping and batching
+  groupId     String?          // For grouping related notifications
+  batchId     String?          // For batching notifications
+  parentId    String?          // For threaded notifications
+  
+  // Delivery tracking
+  deliveryStatus String        @default("pending") // pending, sent, delivered, failed
+  deliveryChannels String?     // JSON array of channels used
+  
+  // Relations
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  parent      Notification?    @relation("NotificationThread", fields: [parentId], references: [id])
+  children    Notification[]   @relation("NotificationThread")
+  
+  @@map("notifications")
+}
+
+model Activity {
+  id          String       @id @default(cuid())
+  type        ActivityType
+  action      String       // created, updated, deleted, etc.
+  entityType  String       // content, project, task, etc.
+  entityId    String
+  metadata    Json?
+  ipAddress   String?
+  userAgent   String?
+  createdAt   DateTime     @default(now())
+  
+  // Relations
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("activities")
+}
+
+model PresenceSession {
+  id          String   @id @default(cuid())
+  sessionId   String   @unique
+  location    String   // page/route where user is active
+  isActive    Boolean  @default(true)
+  lastSeen    DateTime @default(now())
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("presence_sessions")
+}
+
+model ProjectCollaborator {
+  id          String              @id @default(cuid())
+  role        CollaboratorRole    @default(VIEWER)
+  permissions String              @default("{}")
+  joinedAt    DateTime            @default(now())
+  
+  // Relations
+  project     Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId   String
+  user        User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@unique([projectId, userId])
+  @@map("project_collaborators")
+}
+
+model ProjectAnalytics {
+  id                String   @id @default(cuid())
+  totalTimeSpent    Int      @default(0) // in minutes
+  tasksCompleted    Int      @default(0)
+  tasksTotal        Int      @default(0)
+  milestonesHit     Int      @default(0)
+  milestonesTotal   Int      @default(0)
+  averageTaskTime   Int      @default(0) // in minutes
+  velocityPoints    Int      @default(0)
+  burndownData      String   @default("[]")
+  lastCalculated    DateTime @default(now())
+  
+  // Relations
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId         String   @unique
+  
+  @@map("project_analytics")
+}
+
+model TimeEntry {
+  id          String    @id @default(cuid())
+  description String?
+  startTime   DateTime
+  endTime     DateTime?
+  duration    Int?      // in minutes, calculated field
+  billable    Boolean   @default(false)
+  tags        String?   // JSON string of tags
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  // Relations
+  project     Project?  @relation(fields: [projectId], references: [id])
+  projectId   String?
+  task        Task?     @relation(fields: [taskId], references: [id])
+  taskId      String?
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("time_entries")
+}
+
+model Comment {
+  id          String      @id @default(cuid())
+  content     String
+  entityType  String      // content, project, task, etc.
+  entityId    String
+  parentId    String?     // for threaded comments
+  edited      Boolean     @default(false)
+  editedAt    DateTime?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations
+  author      User        @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    String
+  parent      Comment?    @relation("CommentThread", fields: [parentId], references: [id])
+  replies     Comment[]   @relation("CommentThread")
+  
+  @@map("comments")
+}
+
+model Share {
+  id          String      @id @default(cuid())
+  entityType  String      // content, project, calendar
+  entityId    String
+  shareType   ShareType   @default(LINK)
+  permission  Permission  @default(VIEW)
+  token       String      @unique // for link sharing
+  password    String?     // optional password protection
+  expiresAt   DateTime?
+  maxViews    Int?
+  viewCount   Int         @default(0)
+  message     String?
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+  
+  // Relations
+  sharedBy    User        @relation(fields: [sharedById], references: [id], onDelete: Cascade)
+  sharedById  String
+  
+  @@map("shares")
+}
+
+model SearchIndex {
+  id          String   @id @default(cuid())
+  entityType  String   // content, project, task, etc.
+  entityId    String
+  title       String
+  content     String
+  tags        String?  // JSON string of tags
+  metadata    Json?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([entityType, entityId])
+  @@map("search_index")
+}
+
+model Integration {
+  id          String            @id @default(cuid())
+  type        IntegrationType
+  name        String
+  config      String            @default("{}")
+  credentials String            @default("{}")
+  isActive    Boolean           @default(true)
+  lastSync    DateTime?
+  syncStatus  String?
+  errorLog    String?
+  
+  // Calendar-specific fields
+  calendarIds Json?             // Array of calendar IDs to sync
+  syncDirection String          @default("bidirectional") // 'import', 'export', 'bidirectional'
+  
+  createdAt   DateTime          @default(now())
+  updatedAt   DateTime          @updatedAt
+  
+  // Relations
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("integrations")
+}
+
+model Backup {
+  id          String      @id @default(cuid())
+  type        BackupType  @default(MANUAL)
+  status      BackupStatus @default(PENDING)
+  filePath    String?
+  fileSize    Int?        // in bytes
+  metadata    Json?
+  error       String?
+  createdAt   DateTime    @default(now())
+  completedAt DateTime?
+  
+  // Relations
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  
+  @@map("backups")
+}
+
+model ProjectTemplate {
+  id          String   @id @default(cuid())
+  name        String
+  description String
+  category    String
+  isPublic    Boolean  @default(false)
+  usageCount  Int      @default(0)
+  tags        String?  // JSON string of tags
+  structure   String   @default("{}")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  author      User     @relation("TemplateAuthor", fields: [authorId], references: [id], onDelete: Cascade)
+  authorId    String
+  
+  @@map("project_templates")
+}
+
+model DocumentLock {
+  id          String   @id @default(cuid())
+  entityType  String   // 'project', 'content', 'task', etc.
+  entityId    String
+  field       String?  // specific field being locked (optional)
+  reason      String?
+  isActive    Boolean  @default(true)
+  expiresAt   DateTime?
+  unlockedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  lockedBy    User     @relation("DocumentLockOwner", fields: [lockedById], references: [id], onDelete: Cascade)
+  lockedById  String
+  unlockedBy  User?    @relation("DocumentLockUnlocker", fields: [unlockedById], references: [id])
+  unlockedById String?
+  
+  @@unique([entityType, entityId, field, isActive])
+  @@map("document_locks")
+}
+
+
+
+model ProjectGoal {
+  id           String   @id @default(cuid())
+  title        String
+  description  String?
+  type         String   // 'completion', 'time', 'quality', 'custom'
+  targetValue  Float
+  currentValue Float    @default(0)
+  unit         String
+  deadline     DateTime?
+  priority     Priority @default(MEDIUM)
+  status       String   @default("ACTIVE") // 'ACTIVE', 'COMPLETED', 'PAUSED', 'CANCELLED'
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  
+  // Relations
+  project      Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  projectId    String
+  
+  @@map("project_goals")
+}
+
+
+
+model TaskDependency {
+  id              String              @id @default(cuid())
+  type            TaskDependencyType  @default(FINISH_TO_START)
+  lag             Int?                // in hours
+  createdAt       DateTime            @default(now())
+  
+  // Relations
+  dependentTask   Task                @relation("DependentTask", fields: [dependentTaskId], references: [id], onDelete: Cascade)
+  dependentTaskId String
+  dependsOnTask   Task                @relation("DependsOnTask", fields: [dependsOnTaskId], references: [id], onDelete: Cascade)
+  dependsOnTaskId String
+  
+  @@unique([dependentTaskId, dependsOnTaskId])
+  @@map("task_dependencies")
+}
+
+// Enhanced Authentication Models
+model RefreshToken {
+  id         String    @id @default(cuid())
+  token      String    @unique
+  userId     String
+  deviceId   String?
+  deviceName String?
+  ipAddress  String?
+  userAgent  String?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// Offline Sync Models
+model OfflineChange {
+  id               String   @id @default(cuid())
+  entityType       String   // 'content', 'task', 'project', 'event', 'file'
+  entityId         String
+  operation        String   // 'create', 'update', 'delete'
+  data             Json
+  userId           String
+  deviceId         String
+  timestamp        DateTime
+  synced           Boolean  @default(false)
+  conflictResolved Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("offline_changes")
+}
+
+model SyncConflict {
+  id           String    @id @default(cuid())
+  entityType   String
+  entityId     String
+  localChange  Json      // The local change data
+  serverData   Json      // The server data at conflict time
+  conflictType String    // 'modify_modify', 'delete_modify', 'modify_delete'
+  resolved     Boolean   @default(false)
+  resolution   String?   // 'local', 'server', 'merge'
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("sync_conflicts")
+}
+
+model SyncLog {
+  id        String   @id @default(cuid())
+  userId    String
+  deviceId  String?
+  processed Int      @default(0)
+  conflicts Int      @default(0)
+  errors    String   @default("[]") // JSON array of error messages
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("sync_logs")
+}
+
+// Cloud Integration Model for OAuth providers
+model CloudIntegration {
+  id           String   @id @default(cuid())
+  provider     String   // 'google', 'microsoft', 'dropbox', etc.
+  accessToken  String
+  refreshToken String?
+  tokenType    String   @default("Bearer")
+  expiresAt    DateTime?
+  scopes       String   @default("[]") // JSON array of granted scopes
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  // Relations
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId       String
+
+  @@unique([userId, provider])
+  @@map("cloud_integrations")
+}
+
+// New enums
+enum WorkspaceRole {
+  OWNER
+  ADMIN
+  MEMBER
+  GUEST
+}
+
+enum NotificationType {
+  SYSTEM
+  PROJECT_UPDATE
+  TASK_ASSIGNED
+  TASK_DUE
+  CALENDAR_REMINDER
+  COLLABORATION_INVITE
+  MENTION
+  DEADLINE_APPROACHING
+  MILESTONE_REACHED
+}
+
+enum ActivityType {
+  CREATE
+  UPDATE
+  DELETE
+  VIEW
+  SHARE
+  COMMENT
+  COLLABORATE
+  LOGIN
+  LOGOUT
+}
+
+enum CollaboratorRole {
+  OWNER
+  EDITOR
+  VIEWER
+  COMMENTER
+}
+
+enum ShareType {
+  LINK
+  EMAIL
+  TEAM
+}
+
+enum Permission {
+  VIEW
+  COMMENT
+  EDIT
+  ADMIN
+}
+
+enum IntegrationType {
+  GOOGLE_CALENDAR
+  OUTLOOK_CALENDAR
+  GOOGLE_DRIVE
+  DROPBOX
+  SLACK
+  DISCORD
+  GITHUB
+  GITLAB
+  TRELLO
+  ASANA
+}
+
+enum BackupType {
+  MANUAL
+  SCHEDULED
+  AUTO
+}
+
+enum BackupStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  FAILED
+}
+
+enum TaskDependencyType {
+  FINISH_TO_START
+  START_TO_START
+  FINISH_TO_FINISH
+  START_TO_FINISH
+}
+
+// Custom Content Types model
+model CustomContentType {
+  id          String   @id @default(cuid())
+  name        String   // Display name (e.g., "Recipes", "Workout Plans")
+  key         String   // Unique key for API usage (e.g., "recipe", "workout")
+  description String?
+  icon        String?  // Lucide icon name or custom icon URL
+  color       String   @default("#3B82F6") // Hex color
+  template    String?  // JSON template for new items of this type
+  fields      String?  // JSON schema for custom fields
+  isSystem    Boolean  @default(false) // true for built-in types
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId      String
+  contentItems ContentItem[] @relation("CustomTypeItems")
+  
+  @@unique([userId, key])
+  @@map("custom_content_types")
+}
+
+// Mobile Link Token for authenticating mobile app
+model MobileToken {
+  id                String   @id @default(cuid())
+  token             String   @unique // Unique token for mobile app
+  googleAccessToken String   // Google Drive access token
+  googleRefreshToken String?  // Google Drive refresh token
+  expiresAt         DateTime // Token expiry time
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  used              Boolean  @default(false)
+  usedAt            DateTime?
+  
+  // Relations
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId            String
+  
+  @@index([userId])
+  @@map("mobile_tokens")
+}
+
+// OAuth account links. Required by PrismaAdapter for OAuth sign-in (ADR-007 D2).
+// No Session / VerificationToken models: the session strategy is 'jwt' and there is no
+// email provider, so those adapter methods are never reached.
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String?
+  access_token      String?
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String?
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+  @@map("accounts")
+}

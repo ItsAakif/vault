@@ -1,0 +1,202 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ---------------------------------------------------------------------------
+ * T083 - the supplied tweakcn theme (display name "Vescrow 1.2",
+ * registry id cml5dyjea000004jr66ytcg0l), translated rather than pasted.
+ *
+ * The theme is authored for Tailwind v4 (`@import "tailwindcss"`,
+ * `@theme inline`, `@custom-variant`). This app is Tailwind 3.4.17 with
+ * `tailwind.config.ts`, so the *values* were adopted and the *mechanism* was
+ * kept: ADR-011 D1-A channel-source tokens. Each colour is still a BARE CHANNEL
+ * TRIPLE here plus a DERIVED complete colour, and `tailwind.config.ts` still
+ * wraps the channel in `oklch(var(--x-ch) / <alpha-value>)`, which is the only
+ * reason 84 source lines of `/opacity` modifiers emit anything at all.
+ *
+ * Two theme values could not be pasted verbatim:
+ *  - Georgia is not a Google font, so it is a SYSTEM serif stack below (never
+ *    a `next/font/google` import).
+ *  - the theme's shadows were malformed CSS - a comma-separated hsl(), a slash
+ *    alpha and no `%` unit on any of the three channels, which every browser
+ *    drops. Every shadow below is normalised to `hsl(0 0% 0% / <alpha>)`.
+ * ------------------------------------------------------------------------- */
+
+/* Type stacks. `--font-sans` / `--font-mono` are fed by `next/font` via the
+ * `--font-bricolage` / `--font-jetbrains-mono` variables that
+ * `src/app/layout.tsx` puts on <html>. The fallback inside each var() keeps the
+ * app readable if the self-hosted font is ever unavailable. */
+:root {
+  --font-sans: var(--font-bricolage, ui-sans-serif), ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --font-mono: var(--font-jetbrains-mono, ui-monospace), ui-monospace, SFMono-Regular, "SF Mono", Consolas, "Liberation Mono", Menlo, monospace;
+  --font-serif: Georgia, "Times New Roman", Times, serif;
+}
+
+:root {
+  --radius: 1.25rem;
+  --app-header-h: 3.5rem;
+  --tracking-normal: -0.01em;
+
+  /* channel sources - bare `L C H` triples, never wrapped */
+  --paper-ch: 0.9924 0.0028 308.4292;
+  --paper: oklch(var(--paper-ch));
+  --surface-ch: 1.0000 0 0;
+  --surface: oklch(var(--surface-ch));
+  --surface-sunken-ch: 0.9518 0.0057 308.3939;
+  --surface-sunken: oklch(var(--surface-sunken-ch));
+  --ink-ch: 0.1288 0.0219 314.0129;
+  --ink: oklch(var(--ink-ch));
+  --ink-muted-ch: 0.4882 0.0203 308.0008;
+  --ink-muted: oklch(var(--ink-muted-ch));
+  --ink-faint-ch: 0.6200 0.0200 308.4000;
+  --ink-faint: oklch(var(--ink-faint-ch));
+  --line-ch: 0.9160 0.0120 313.2115;
+  --line: oklch(var(--line-ch));
+  --signal-ch: 0.2236 0.1469 265.8205;
+  --signal: oklch(var(--signal-ch));
+  --signal-ink-ch: 1.0000 0 0;
+  --signal-ink: oklch(var(--signal-ink-ch));
+  --signal-subtle-ch: 0.9356 0.0312 279.8620;
+  --signal-subtle: oklch(var(--signal-subtle-ch));
+  /* the theme carries no success/warning colour - these two keep their values */
+  --positive-ch: 0.52 0.11 155;
+  --positive: oklch(var(--positive-ch));
+  --caution-ch: 0.68 0.13 78;
+  --caution: oklch(var(--caution-ch));
+  --danger-ch: 0.5858 0.2220 17.5846;
+  --danger: oklch(var(--danger-ch));
+
+  /* complete-colour aliases - read directly by hand-written CSS and by
+   * @mdxeditor/editor, so these must keep resolving to a full colour */
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--signal);
+  --primary-foreground: var(--signal-ink);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--signal-subtle);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--signal);
+
+  /* data palette - complete colours, deliberately not channel-ised */
+  --chart-1: oklch(0.4691 0.2225 262.4817);
+  --chart-2: oklch(0.6056 0.2189 292.7172);
+  --chart-3: oklch(0.6668 0.2591 322.1499);
+  --chart-4: oklch(0.6450 0.2154 16.4393);
+  --chart-5: oklch(0.7049 0.1867 47.6044);
+
+  --sidebar: var(--surface-sunken);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--signal);
+  --sidebar-primary-foreground: var(--signal-ink);
+  --sidebar-accent: var(--signal-subtle);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--signal);
+
+  /* elevation - theme scale, normalised away from the legacy comma form */
+  --shadow-2xs: 0px 4px 10px 0px hsl(0 0% 0% / 0.05);
+  --shadow-xs: 0px 4px 10px 0px hsl(0 0% 0% / 0.05);
+  --shadow-sm: 0px 4px 10px 0px hsl(0 0% 0% / 0.10), 0px 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow: 0px 4px 10px 0px hsl(0 0% 0% / 0.10), 0px 1px 2px -1px hsl(0 0% 0% / 0.10);
+  --shadow-md: 0px 4px 10px 0px hsl(0 0% 0% / 0.10), 0px 2px 4px -1px hsl(0 0% 0% / 0.10);
+  --shadow-lg: 0px 4px 10px 0px hsl(0 0% 0% / 0.10), 0px 4px 6px -1px hsl(0 0% 0% / 0.10);
+  --shadow-xl: 0px 4px 10px 0px hsl(0 0% 0% / 0.10), 0px 8px 10px -1px hsl(0 0% 0% / 0.10);
+  --shadow-2xl: 0px 4px 10px 0px hsl(0 0% 0% / 0.25);
+}
+
+.dark {
+  --radius: 1.25rem;
+  --app-header-h: 3.5rem;
+  --tracking-normal: -0.01em;
+
+  --paper-ch: 0.1063 0.0172 259.5380;
+  --paper: oklch(var(--paper-ch));
+  --surface-ch: 0.1450 0.0211 263.1799;
+  --surface: oklch(var(--surface-ch));
+  --surface-sunken-ch: 0.1797 0.0376 272.6396;
+  --surface-sunken: oklch(var(--surface-sunken-ch));
+  --ink-ch: 0.9924 0.0028 308.4292;
+  --ink: oklch(var(--ink-ch));
+  --ink-muted-ch: 0.6878 0.0218 285.8125;
+  --ink-muted: oklch(var(--ink-muted-ch));
+  --ink-faint-ch: 0.5600 0.0200 285.8000;
+  --ink-faint: oklch(var(--ink-faint-ch));
+  --line-ch: 0.2445 0.0736 280.5871;
+  --line: oklch(var(--line-ch));
+  --signal-ch: 0.3820 0.1967 265.2890;
+  --signal: oklch(var(--signal-ch));
+  --signal-ink-ch: 1.0000 0 0;
+  --signal-ink: oklch(var(--signal-ink-ch));
+  --signal-subtle-ch: 0.2553 0.0657 274.6654;
+  --signal-subtle: oklch(var(--signal-subtle-ch));
+  --positive-ch: 0.68 0.12 155;
+  --positive: oklch(var(--positive-ch));
+  --caution-ch: 0.76 0.13 78;
+  --caution: oklch(var(--caution-ch));
+  --danger-ch: 0.4038 0.1343 13.3026;
+  --danger: oklch(var(--danger-ch));
+
+  --background: var(--paper);
+  --foreground: var(--ink);
+  --card: var(--surface);
+  --card-foreground: var(--ink);
+  --popover: var(--surface);
+  --popover-foreground: var(--ink);
+  --primary: var(--signal);
+  --primary-foreground: var(--signal-ink);
+  --secondary: var(--surface-sunken);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-muted);
+  --accent: var(--signal-subtle);
+  --accent-foreground: var(--ink);
+  --destructive: var(--danger);
+  --border: var(--line);
+  --input: var(--line);
+  --ring: var(--signal);
+
+  --chart-1: oklch(0.6199 0.1907 271.3978);
+  --chart-2: oklch(0.7599 0.1368 61.0595);
+  --chart-3: oklch(0.6450 0.2154 16.4393);
+  --chart-4: oklch(0.7049 0.1867 47.6044);
+  --chart-5: oklch(0.3395 0.1557 273.0758);
+
+  --sidebar: var(--surface-sunken);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--signal);
+  --sidebar-primary-foreground: var(--signal-ink);
+  --sidebar-accent: var(--signal-subtle);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--line);
+  --sidebar-ring: var(--signal);
+
+  --shadow-2xs: 0px 10px 20px 0px hsl(0 0% 0% / 0.25);
+  --shadow-xs: 0px 10px 20px 0px hsl(0 0% 0% / 0.25);
+  --shadow-sm: 0px 10px 20px 0px hsl(0 0% 0% / 0.50), 0px 1px 2px -1px hsl(0 0% 0% / 0.50);
+  --shadow: 0px 10px 20px 0px hsl(0 0% 0% / 0.50), 0px 1px 2px -1px hsl(0 0% 0% / 0.50);
+  --shadow-md: 0px 10px 20px 0px hsl(0 0% 0% / 0.50), 0px 2px 4px -1px hsl(0 0% 0% / 0.50);
+  --shadow-lg: 0px 10px 20px 0px hsl(0 0% 0% / 0.50), 0px 4px 6px -1px hsl(0 0% 0% / 0.50);
+  --shadow-xl: 0px 10px 20px 0px hsl(0 0% 0% / 0.50), 0px 8px 10px -1px hsl(0 0% 0% / 0.50);
+  /* the theme's own value; `<alpha-value>` above 1 clamps, it is not invalid */
+  --shadow-2xl: 0px 10px 20px 0px hsl(0 0% 0% / 1.25);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    letter-spacing: var(--tracking-normal);
+  }
+}

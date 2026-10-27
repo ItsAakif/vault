@@ -1,0 +1,45 @@
+# Docker build context exclusions (Vault v2 web app).
+# NOTE: package-lock.json is intentionally NOT ignored: `npm ci` requires it.
+
+# Docker metadata (not needed inside the image)
+Dockerfile
+.dockerignore
+
+# Dependencies (installed fresh inside the image)
+node_modules
+test
+
+# Build output / test coverage (regenerated inside the image)
+.next
+coverage
+tsconfig.tsbuildinfo
+
+# VCS and editor
+.git
+.vscode
+
+# Logs
+*.log
+npm-debug.log
+run-server.out.log
+run-server.err.log
+
+# Environment files and secrets (never bake into the image)
+.env
+.env.example
+.env.*
+
+# Local SQLite databases (prod uses the /app/data volume, not files baked in the image)
+db
+prisma/db
+
+# Documentation, planning and examples not needed at runtime
+docs
+.planning
+.kiro
+examples
+README.md
+README_NEW.md
+
+# Out of scope: the React Native mobile app must never enter the image
+mobile/

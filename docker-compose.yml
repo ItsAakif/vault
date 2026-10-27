@@ -1,0 +1,93 @@
+services:
+  vault:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      # NEXT_PUBLIC_* values are inlined into the browser bundle at BUILD time,
+      # so they are build args, not runtime `environment:` entries. Changing your
+      # domain requires `docker compose build --no-cache`, not a restart.
+      args:
+        - NEXT_PUBLIC_CUSTOM_SERVER=true
+        - NEXT_PUBLIC_SOCKET_URL=${NEXT_PUBLIC_SOCKET_URL:-http://localhost:3000}
+        - NEXT_PUBLIC_VAPID_PUBLIC_KEY=${NEXT_PUBLIC_VAPID_PUBLIC_KEY:-}
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      # Lives inside the named volume below. If this points at the container's
+      # ephemeral filesystem instead, every redeploy wipes the user rows, the
+      # Google link and the preferences.
+      - DATABASE_URL=file:/app/data/vault.db
+      - NEXTAUTH_URL=${NEXTAUTH_URL:-http://localhost:3000}
+      # Required: `docker compose up` fails fast with a clear message if unset,
+      # rather than starting with a guessable signing secret.
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET:?set NEXTAUTH_SECRET in your .env or shell environment}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID:-}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET:-}
+      # Optional Google Calendar integration. Redirect URI must be registered on
+      # the same OAuth client when set.
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-}
+      # Optional Outlook Calendar integration (the app reads OUTLOOK_*, not MICROSOFT_*).
+      - OUTLOOK_CLIENT_ID=${OUTLOOK_CLIENT_ID:-}
+      - OUTLOOK_CLIENT_SECRET=${OUTLOOK_CLIENT_SECRET:-}
+      - OUTLOOK_REDIRECT_URI=${OUTLOOK_REDIRECT_URI:-}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-http://localhost:3000,http://127.0.0.1:3000}
+      # Must match the vault_uploads mount below, or uploads land on the
+      # container filesystem and vanish on redeploy.
+      - UPLOAD_DIR=/app/public/uploads
+    volumes:
+      # The SQLite database. Do not remove this volume.
+      - vault_data:/app/data
+      - vault_uploads:/app/public/uploads
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # NOT USED BY THE APP. Sessions are JWTs and nothing in the code reads Redis
+  # as a cache; REDIS_URL is only echoed by one status endpoint. Kept for local
+  # experimentation behind a profile so it never starts by default.
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    profiles:
+      - with-redis
+
+  # UNSUPPORTED: This app's Prisma provider is "sqlite" (ADR-003). Enabling the
+  # `with-postgres` profile does NOT make the app use Postgres - there is no
+  # Postgres migration programme yet. Do not use for production until a Postgres
+  # migration lands.
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: vault
+      POSTGRES_USER: vault
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vault_password_change_this}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    profiles:
+      - with-postgres
+
+volumes:
+  vault_data:
+    driver: local
+  vault_uploads:
+    driver: local
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+
+networks:
+  default:
+    name: vault-network
