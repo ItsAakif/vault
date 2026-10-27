@@ -33,7 +33,8 @@ interface MockFile {
   name: string
   mimeType: string
   parentId: string | null
-  body?: string
+  /** What `files.get` hands back: a raw body string, or an already-parsed object. */
+  body?: unknown
   properties?: Record<string, string>
 }
 
@@ -80,7 +81,7 @@ function addFolder(folder: Omit<MockFolder, 'mimeType'>): MockFolder {
   return entry
 }
 
-function addFlatProject(id: string, body: string, properties?: Record<string, string>): MockFile {
+function addFlatProject(id: string, body: unknown, properties?: Record<string, string>): MockFile {
   const file: MockFile = {
     id,
     name: 'project.json',
@@ -148,7 +149,7 @@ function listResult(params: Params): { data: { files: Array<Record<string, unkno
   return { data: { files: entries.map((entry) => ({ id: entry.id, name: entry.name, mimeType: entry.mimeType })) } }
 }
 
-function getResult(params: Params): { data: string } {
+function getResult(params: Params): { data: unknown } {
   const file = files.find((candidate) => candidate.id === params.fileId)
   if (!file || file.body === undefined) {
     throw new Error(JSON.stringify({ error: { code: 404, message: `File not found: ${params.fileId}` } }))
@@ -353,5 +354,97 @@ describe('getProject and updateProject resolve the record inside the project fol
   it('answers null for an id nothing carries', async () => {
     const adapter = await warmAdapter()
     expect(await adapter.getProject('proj_missing')).toBeNull()
+  })
+})
+
+/**
+ * The bug this pins: the Drive client parses an `application/json` media response for you, so
+ * `files.get({ alt: 'media' })` handed `listProjects` an OBJECT and `JSON.parse(object)` threw
+ * `SyntaxError: "[object Object]" is not valid JSON` for every record - `GET /api/projects` kept
+ * answering `[]`. Every media read now asks for text, and the parser accepts either shape.
+ */
+describe('project.json media reads survive both body shapes', () => {
+  /** The options argument of every `files.get` call. */
+  function getOptions(): Array<Record<string, unknown> | undefined> {
+    return mockDrive.files.get.mock.calls.map(
+      (call) => call[1] as Record<string, unknown> | undefined
+    )
+  }
+
+  it('parses a record returned as a JSON string, and asks for text on every read', async () => {
+    addFlatProject('string-project', JSON.stringify(sampleProject('proj_string', 'String body')))
+
+    const adapter = await warmAdapter()
+    const projects = await adapter.listProjects()
+
+    expect(projects.map((project) => project.title)).toEqual(['String body'])
+    expect(consoleError).not.toHaveBeenCalled()
+
+    // The read that fixes the bug: `alt: 'media'` AND `responseType: 'text'`.
+    expect(mockDrive.files.get).toHaveBeenCalledTimes(1)
+    expect(mockDrive.files.get.mock.calls[0][0]).toMatchObject({
+      fileId: 'string-project',
+      alt: 'media',
+    })
+    expect(getOptions()[0]).toMatchObject({ responseType: 'text' })
+  })
+
+  it('lists a record the client already parsed into an object instead of throwing', async () => {
+    // A client that ignores `responseType: 'text'` hands the object straight back.
+    addFlatProject('object-project', sampleProject('proj_object', 'Object body'))
+
+    const adapter = await warmAdapter()
+    const projects = await adapter.listProjects()
+
+    expect(projects.map((project) => project.title)).toEqual(['Object body'])
+    expect(consoleError).not.toHaveBeenCalled()
+  })
+
+  it('skips a malformed or non-object body, logs it, and still returns the readable records', async () => {
+    addFlatProject('string-project', JSON.stringify(sampleProject('proj_a', 'Readable string')))
+    addFlatProject('object-project', sampleProject('proj_b', 'Readable object'))
+    addFlatProject('broken-json', '{ this is not json')
+    addFlatProject('scalar-json', '42')
+    addFlatProject('array-json', '[{"id":"proj_x"}]')
+
+    const adapter = await warmAdapter()
+    const projects = await adapter.listProjects()
+
+    expect(projects.map((project) => project.title).sort()).toEqual([
+      'Readable object',
+      'Readable string',
+    ])
+
+    for (const fileId of ['broken-json', 'scalar-json', 'array-json']) {
+      expect(consoleError).toHaveBeenCalledWith(
+        expect.stringContaining(`Skipping unreadable project ${fileId}`),
+        expect.anything()
+      )
+    }
+  })
+
+  it('applies the same text read to getProject and updateProject', async () => {
+    addFlatProject('flat-project', JSON.stringify(sampleProject('proj_flat', 'Flat project')), {
+      projectId: 'proj_flat',
+    })
+
+    const adapter = await warmAdapter()
+    expect((await adapter.getProject('proj_flat'))?.title).toBe('Flat project')
+
+    const updated = await adapter.updateProject('proj_flat', { title: 'Flat project, revised' })
+    expect(updated.title).toBe('Flat project, revised')
+
+    expect(mockDrive.files.get.mock.calls.length).toBeGreaterThanOrEqual(2)
+    expect(mockDrive.files.get.mock.calls.every((call) => call[0].alt === 'media')).toBe(true)
+    expect(
+      getOptions().every((options) => options?.responseType === 'text')
+    ).toBe(true)
+
+    // And the object shape works on the single-record path too.
+    files.find((file) => file.id === 'flat-project')!.body = sampleProject(
+      'proj_flat',
+      'Object record'
+    )
+    expect((await adapter.getProject('proj_flat'))?.title).toBe('Object record')
   })
 })

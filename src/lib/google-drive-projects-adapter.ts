@@ -32,6 +32,34 @@ function escapeQueryValue(value: string): string {
   return value.replace(/\\/g, '\\\\').replace(/'/g, "\\'")
 }
 
+/** A `project.json` body is a JSON object; arrays and primitives are not records. */
+function isProjectRecord(value: unknown): value is Project {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+/**
+ * Parse a `project.json` body into a project, or `null` when it cannot be one.
+ *
+ * Media reads ask for `responseType: 'text'`, so the body normally arrives as a string. A client
+ * version that ignores the option may hand back an already-parsed object, which `JSON.parse`
+ * would coerce to `"[object Object]"` and throw on - both shapes are therefore accepted here.
+ * Malformed JSON, arrays and primitives are `null`, so one bad record can be skipped instead of
+ * failing the whole collection.
+ */
+function parseProjectRecord(body: unknown): Project | null {
+  if (typeof body === 'string') {
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(body)
+    } catch {
+      return null
+    }
+    return isProjectRecord(parsed) ? parsed : null
+  }
+
+  return isProjectRecord(body) ? body : null
+}
+
 export class GoogleDriveProjectsAdapter {
   private drive: any
   private projectsFolderId: string = ''
@@ -70,6 +98,21 @@ export class GoogleDriveProjectsAdapter {
   }
 
   /**
+   * Read one `project.json` body.
+   *
+   * `responseType: 'text'` keeps the body a string so `JSON.parse` never receives the object the
+   * client would otherwise hand back for an `application/json` response.
+   */
+  private async readProjectRecord(fileId: string): Promise<Project | null> {
+    const content = await this.drive.files.get(
+      { fileId, alt: 'media' },
+      { responseType: 'text' }
+    )
+
+    return parseProjectRecord(content.data)
+  }
+
+  /**
    * `createProject` writes one FOLDER per project and puts `project.json` INSIDE it, while Drive's
    * `files.list` is not recursive: "project.json in Projects" only ever matched a record sitting
    * directly in `Vault/Projects`. The listing therefore walks the one level that exists, in waves
@@ -89,11 +132,15 @@ export class GoogleDriveProjectsAdapter {
       const projects = await Promise.all(
         records.map(async (record) => {
           try {
-            const content = await this.drive.files.get({
-              fileId: record.fileId,
-              alt: 'media',
-            })
-            return JSON.parse(content.data) as Project
+            const project = await this.readProjectRecord(record.fileId)
+            if (!project) {
+              console.error(
+                `Skipping unreadable project ${record.fileId}:`,
+                new Error('project.json body is not a JSON object')
+              )
+              return null
+            }
+            return project
           } catch (error) {
             console.error(`Skipping unreadable project ${record.fileId}:`, error)
             return null
@@ -209,12 +256,12 @@ export class GoogleDriveProjectsAdapter {
         return null
       }
 
-      const content = await this.drive.files.get({
-        fileId: record.fileId,
-        alt: 'media',
-      })
+      const project = await this.readProjectRecord(record.fileId)
+      if (!project) {
+        throw new Error(`Project record is not a JSON object: ${record.fileId}`)
+      }
 
-      return JSON.parse(content.data)
+      return project
     } catch (error) {
       console.error('Error getting project:', error)
       throw error
